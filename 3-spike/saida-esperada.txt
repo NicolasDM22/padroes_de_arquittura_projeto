@@ -1,0 +1,46 @@
+06:00 retrato v1 enviado aos ônibus; os dois perdem a rede
+
+06:40 app recarrega R$ 10,00 no CARTAO-B (a central sabe; os ônibus não)
+
+Validações sem rede:
+  06:50 ONIBUS-101 CARTAO-A      ACEITA
+  06:55 ONIBUS-101 CARTAO-B      ACEITA
+  07:00 ONIBUS-101 CARTAO-C      RECUSADA (bloqueado)
+  07:02 ONIBUS-101 CARTAO-IDOSO  ACEITA
+  07:05 ONIBUS-202 CARTAO-A      ACEITA
+  07:10 ONIBUS-101 QR-777        ACEITA
+  07:12 ONIBUS-101 CARTAO-A      ACEITA
+  07:20 ONIBUS-202 QR-777        ACEITA
+  07:30 ONIBUS-202 CARTAO-B      ACEITA
+  07:35 ONIBUS-202 CARTAO-B      RECUSADA (saldo local insuficiente)
+  pior tempo de decisão abaixo de 300 ms: True
+
+08:30 ONIBUS-101 volta à rede; a confirmação se perde e ele reenvia o lote
+  outbox após falha: 5 eventos (nada foi descartado)
+  outbox após reenvio: 0 eventos; central guardou 5 eventos (sem duplicar)
+
+11:05 ONIBUS-202 volta após 4 h sem rede; lote chega fora de ordem
+  central tem 8 eventos únicos de 2 ônibus
+
+Reconciliação central:
+  - QR-777 usado de novo em ONIBUS-202 às 07:20 (primeiro uso: ONIBUS-101 às 07:10)
+  - CARTAO-A ficou com saldo -R$ 5,00: bloqueado até recarga
+
+Saldos no livro-razão central:
+  CARTAO-A: -R$ 5,00
+  CARTAO-B: R$ 5,00
+  CARTAO-C: R$ 20,00
+
+11:10 retrato v2 chega ao ONIBUS-101
+  11:15 ONIBUS-101 CARTAO-A      RECUSADA (bloqueado)
+  11:16 ONIBUS-101 QR-777        RECUSADA (bilhete inválido ou já usado neste ônibus)
+  11:17 ONIBUS-101 CARTAO-B      ACEITA
+
+12:00 validador do ONIBUS-101 é trocado: época 2, sequencial volta a 1
+  12:05 ONIBUS-101 CARTAO-IDOSO  ACEITA
+  evento ONIBUS-101:2:0001 aceito pela central; o ID antigo sem época seria ONIBUS-101:0001, já visto, e a viagem sumiria do repasse
+
+Contraprova: se a central somasse sem checar o ID do evento,
+  o reenvio do ONIBUS-101 contaria duas vezes e o CARTAO-A iria a -R$ 15,00 em vez de -R$ 5,00
+
+Invariantes (um evento aplicado uma vez; saldo = cargas - débitos): True
