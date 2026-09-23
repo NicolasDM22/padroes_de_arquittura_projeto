@@ -5,6 +5,8 @@ Padrões e Arquitetura de Software · PUC-Campinas · 2026-2
 
 > Continuação da [matriz de estilos (Entrega 1)](../1-matriz/matriz.md). Os ADRs estão em [`adr/`](adr/), no formato do capítulo 4 do livro (seis partes, numeração `NNNN`, status controlado).
 
+> **Versão visual:** os diagramas foram exportados para PNG para melhorar legibilidade e apresentação. Os arquivos estão em [`diagramas_png/`](diagramas_png/).
+
 ## Sumário
 
 1. [Contexto, envelope e premissas](#1-contexto-envelope-e-premissas)
@@ -80,38 +82,7 @@ Todas as figuras respeitam o limite de 12 elementos do § 3.6. Por isso, o níve
 
 ## 3. C4 nível 1 — Contexto
 
-```mermaid
-flowchart LR
-    classDef pessoa fill:#08427b,color:#fff,stroke:#052e56
-    classDef sistema fill:#1168bd,color:#fff,stroke:#0b4884
-    classDef externo fill:#999,color:#fff,stroke:#6b6b6b
-
-    pas["Passageiro"]:::pessoa
-    mot["Motorista"]:::pessoa
-    ges["Órgão gestor"]:::pessoa
-    ate["Atendente"]:::pessoa
-    aud["Auditoria externa"]:::pessoa
-    sbe["Sistema de Bilhetagem e Mobilidade<br/>(novo)"]:::sistema
-    leg["Sistema legado de bilhetagem"]:::externo
-    adq["Adquirente (cartão/Pix)"]:::externo
-    ban["Banco"]:::externo
-    ope["Operadoras (consórcio)"]:::externo
-    rec["Lojas credenciadas"]:::externo
-    ad["Diretório da Prefeitura"]:::externo
-
-    pas -->|"chamada: usa app e validador"| sbe
-    mot -->|"chamada: abre/fecha viagem"| sbe
-    ges -->|"chamada: tarifas, repasse, fiscalização"| sbe
-    ate -->|"chamada: atendimento"| sbe
-    sbe -->|"arquivo: exportações auditáveis"| aud
-    rec -->|"chamada: recarga no terminal"| sbe
-    sbe -->|"chamada: consulta somente leitura [SQL]"| leg
-    leg -->|"arquivo: validações do dia [SFTP]"| sbe
-    sbe -->|"chamada: autoriza e captura [HTTPS]"| adq
-    ban -->|"arquivo: extrato [SFTP]"| sbe
-    sbe -->|"arquivo: repasse mensal [SFTP]"| ope
-    sbe -->|"chamada: autentica servidores [LDAP]"| ad
-```
+![Diagrama 1 — Contexto](diagramas_png/01-contexto.png)
 
 **Diagrama 1 — Contexto (12 elementos).** O legado só aparece com conectores de leitura, porque é o que o envelope permite.
 
@@ -121,103 +92,13 @@ flowchart LR
 
 ### 4.1 Vista A — frota, passageiro e telemetria
 
-```mermaid
-flowchart TB
-    classDef pessoa fill:#08427b,color:#fff,stroke:#052e56
-    classDef cont fill:#438dd5,color:#fff,stroke:#2e6295
-    classDef db fill:#2e6295,color:#fff,stroke:#1d3f60
-
-    pas["Passageiro"]:::pessoa
-    subgraph sis["Sistema de Bilhetagem e Mobilidade"]
-        val["Validador embarcado<br/>[Kotlin, Linux embarcado, SQLite]<br/>decide com retrato local"]:::cont
-        app["App do passageiro<br/>[Android/iOS]"]:::cont
-
-        brk["Broker de mensagens<br/>[RabbitMQ + MQTT, 3 nós]"]:::cont
-
-        pc["Plataforma Central<br/>[Kotlin/Spring Boot, perfil api-interna]"]:::cont
-        ing["Ingestor de Telemetria<br/>[mesmo artefato, perfil ingestor]"]:::cont
-        api["API Pública do Passageiro<br/>[mesmo artefato, perfil api-publica]"]:::cont
-
-        ret["Repositório de retratos<br/>[arquivos estáticos, nginx]"]:::cont
-        pg[("Banco transacional<br/>[PostgreSQL, primário + standby]")]:::db
-        tel[("Banco de telemetria<br/>[PostgreSQL particionado]")]:::db
-        rds[("Modelos de leitura<br/>[Redis]")]:::db
-    end
-
-    pas -->|"chamada: aproxima o cartão [NFC]"| val
-    pas -->|"chamada: usa"| app
-
-    val -->|"fila: eventos de validação da outbox [MQTT QoS 1]"| brk
-    val -->|"fluxo: posição a cada 15 s [MQTT QoS 1]"| brk
-    val -->|"arquivo: baixa retrato e deltas [HTTPS]"| ret
-
-    brk -->|"fila: eventos de validação [AMQP]"| pc
-    brk -->|"fluxo: posições [AMQP]"| ing
-
-    pc -->|"arquivo: publica retrato versionado"| ret
-    pc -->|"chamada: livro-razão [SQL]"| pg
-
-    ing -->|"chamada: grava em lote [SQL COPY]"| tel
-    ing -->|"chamada: atualiza posição e previsão"| rds
-
-    app -->|"chamada: saldo e recarga [HTTPS]"| pc
-    app -->|"chamada: previsão e histórico [HTTPS]"| api
-    api -->|"chamada: lê"| rds
-
-    val ~~~ app
-    brk ~~~ api
-    pc ~~~ ing
-    ing ~~~ ret
-    pg ~~~ tel
-    tel ~~~ rds
-```
+![Diagrama 2A — Contêineres: frota, passageiro e telemetria](diagramas_png/02a-conteineres-frota.png)
 
 **Diagrama 2A — Contêineres: frota, passageiro e telemetria (11 elementos).**
 
 ### 4.2 Vista B — gestão, recarga e integrações
 
-```mermaid
-flowchart TB
-    classDef pessoa fill:#08427b,color:#fff,stroke:#052e56
-    classDef cont fill:#438dd5,color:#fff,stroke:#2e6295
-    classDef db fill:#2e6295,color:#fff,stroke:#1d3f60
-    classDef externo fill:#999,color:#fff,stroke:#6b6b6b
-
-    usu["Atendente, órgão gestor, operadora"]:::pessoa
-    subgraph sis["Sistema de Bilhetagem e Mobilidade"]
-        web["Portal web interno<br/>[SPA]"]:::cont
-        ter["Terminal de recarga<br/>[app de loja/totem]"]:::cont
-        pc["Plataforma Central<br/>[Kotlin/Spring Boot, perfil api-interna]"]:::cont
-        brk["Broker de mensagens<br/>[RabbitMQ]"]:::cont
-        pg[("Banco transacional<br/>[PostgreSQL]")]:::db
-        subgraph pipe["Pipeline de lotes"]
-            direction LR
-            lot["Processador de Lotes<br/>[mesmo artefato, perfil lotes]"]:::cont
-            sftp["Servidor de arquivos<br/>[OpenSSH SFTP]"]:::cont
-        end
-    end
-    leg["Legado"]:::externo
-    adq["Adquirente"]:::externo
-    ban["Banco e operadoras"]:::externo
-
-    usu -->|"chamada: usa"| web
-    web -->|"chamada: API interna [HTTPS]"| pc
-    ter -->|"chamada: registra recarga [HTTPS]"| pc
-    pc -->|"chamada: autoriza e captura [HTTPS]"| adq
-    adq -->|"chamada: confirma pagamento [webhook HTTPS]"| pc
-    pc -->|"evento: fatos de domínio via outbox [AMQP]"| brk
-    brk -->|"evento: fatos financeiros [AMQP]"| lot
-    pc -->|"chamada [SQL]"| pg
-    lot -->|"chamada: apuração e reconciliação [SQL]"| pg
-    lot -->|"chamada: consulta somente leitura [SQL]"| leg
-    leg -->|"arquivo: validações do dia"| sftp
-    ban <-->|"arquivo: extrato, pagamentos, repasse"| sftp
-    sftp -->|"arquivo: entrada dos pipelines"| lot
-
-    ter ~~~ web
-    adq ~~~ brk
-    leg ~~~ ban
-```
+![Diagrama 2B — Contêineres: gestão, recarga e integrações](diagramas_png/02b-conteineres-integracoes.png)
 
 **Diagrama 2B — Contêineres: gestão, recarga e integrações (11 elementos).**
 
@@ -244,51 +125,7 @@ Há **um único artefato de servidor**, executado em quatro perfis. Os 10 desenv
 
 O contêiner detalhado é a **Plataforma Central**, porque concentra o dinheiro (livro-razão, recarga, repasse), a reconciliação das validações e toda a integração. O validador é o contêiner de **maior risco técnico**; seu comportamento é a decisão do [ADR 0005](adr/0005-validar-passagem-offline-e-reconciliar-por-eventos.md), provada no spike da Entrega 3.
 
-```mermaid
-flowchart TB
-    classDef comp fill:#85bbf0,color:#000,stroke:#5d82a8
-    classDef ext fill:#999,color:#fff,stroke:#6b6b6b
-    classDef db fill:#2e6295,color:#fff,stroke:#1d3f60
-
-    brk["Broker"]:::ext
-
-    subgraph pc["Plataforma Central (monolito modular)"]
-        ate["Atendimento e Cadastro<br/>pessoas, pseudônimos, LGPD"]:::comp
-        rec["Recarga<br/>pedido, pagamento, crédito"]:::comp
-
-        con["Reconciliação de validações<br/>deduplicação, uso indevido"]:::comp
-        itg["Integração<br/>portas e adaptadores"]:::comp
-        ret["Retratos da frota<br/>gera base e deltas"]:::comp
-        rep["Repasse<br/>event store e apuração"]:::comp
-
-        raz["Livro-razão de saldo<br/>autoridade do saldo, idempotente"]:::comp
-        tar["Tarifas<br/>regras com vigência"]:::comp
-    end
-
-    pg[("PostgreSQL<br/>esquema por módulo")]:::db
-    rep_arq["Repositório de retratos"]:::ext
-    ext["Adquirente, SFTP, legado"]:::ext
-
-    brk -->|"fila: eventos de validação"| con
-    con -->|"chamada: aplica débito por ID de evento"| raz
-    rec -->|"chamada: aplica crédito e abate dívida"| raz
-    ate -->|"chamada: bloqueio, segunda via"| raz
-    rec -->|"chamada: porta Pagamento"| itg
-    itg -->|"chamada / arquivo: adaptadores"| ext
-    con -->|"evento: UsoIndevido, SaldoNegativo (outbox)"| brk
-    raz -->|"evento: SaldoAlterado, CartaoBloqueado (outbox)"| brk
-    brk -->|"evento: saldos e bloqueios"| ret
-    ret -->|"arquivo: retrato versionado"| rep_arq
-    brk -->|"evento: fatos financeiros"| rep
-    rep -->|"chamada: consulta vigência"| tar
-    raz -->|"chamada [SQL]"| pg
-
-    ate ~~~ rec
-    con ~~~ itg
-    itg ~~~ ret
-    ret ~~~ rep
-    raz ~~~ tar
-```
+![Diagrama 3 — Componentes da Plataforma Central](diagramas_png/03-componentes-plataforma-central.png)
 
 **Diagrama 3 — Componentes da Plataforma Central (12 elementos).** O módulo Integração também alimenta a Reconciliação com as validações do legado (`LEGADO:`). Essa seta foi omitida para respeitar o limite de elementos e está descrita no [ADR 0003](adr/0003-substituir-legado-gradualmente-com-camada-anticorrupcao.md).
 
@@ -353,28 +190,7 @@ flowchart TB
 
 O grupo assume que existe uma **janela de uso duplo entre sincronizações**. A perda é limitada à janela sem rede e ao valor da tarifa.
 
-```mermaid
-sequenceDiagram
-    participant C as Cartão
-    participant A as Validador ônibus A (sem rede)
-    participant B as Validador ônibus B (sem rede)
-    participant Q as Broker
-    participant P as Central (reconciliação + livro-razão)
-    participant R as Retratos
-    Note over A,B: ambos têm retrato v57 com saldo 5,00
-    C->>A: aproxima
-    A->>A: saldo 5,00 - 0 >= 5,00, aceita e grava A:e3:1001 na outbox
-    C->>B: aproxima (ou clone)
-    B->>B: saldo 5,00 - 0 >= 5,00, aceita e grava B:e1:2002 na outbox
-    A->>Q: fila: evento A:e3:1001 quando volta a rede
-    Q->>P: aplica A:e3:1001 (saldo 0,00)
-    B->>Q: fila: evento B:e1:2002
-    Q->>P: aplica B:e1:2002 (saldo -5,00)
-    P->>P: reconciliação: saldo negativo, cartão bloqueado, dívida registrada
-    P->>R: evento CartaoBloqueado
-    R->>R: retrato v58 (delta) com bloqueio
-    Note over P: reenvio de A:e3:1001 é ignorado (ID já visto)
-```
+![Diagrama 4 — Validação offline, reconciliação e bloqueio](diagramas_png/04-sequencia-validacao-offline.png)
 
 **Diagrama 4 — Validação offline, reconciliação e bloqueio.**
 
